@@ -2,12 +2,13 @@
 #include <stdio.h>
 #define AD0 54 //センサのピンで指定する奴じゃない本当のアドレス？あとで書き直す
 #define AD1 55 //0から順にデータ配列に入る、足の番号1~3とデータ配列1～3に入るセンサーデータはそろえる
-#define AD2 56
+#define AD2 56　//今はA0と本来のA0はそろっている。
 #define AD3 57
 #define AD4 58
 #define AD5 59
 #define AD6 60
 #define AD7 61
+//54A0、なし、55A1制圧タンク、56A2足1-弁2と3、57A3足2弁5と6,58A4足3弁7と8、59A5負圧タンク向け
 int current = 0;
 int count = 0; //データログ用のカウンタ
 int sensorNum = 5; //使ってるセンサの数　配列に使う
@@ -17,11 +18,12 @@ int pin = AD0; // 初期のADCチャンネル
 int currentPressure = 0; // 現在の空気圧
 int exhaustValveTime = 0; // 排気バルブ制御時間
 int supplyValveTime = 0;  // 吸気バルブ制御時間
+int rooptime = 25 ; //制御タイミング
 
 int EXITleg[10] = {0}; // 弁のピン番号を格納する配列
 int inleg[10] = {0}; //上に同じ
 
-int nontauchpuls = 20; //不感帯の幅　たぶんアナログリードだから要計算
+int nontauchpuls = 10; //不感帯の幅　たぶんアナログリードだから要計算
 int airroomNun =3 ; //空気室の数
 
 int date[2][10] = {{0}};  // 全ての要素を0で初期化
@@ -34,20 +36,18 @@ enum OperatingMode {
   STANDBY_MODE
 };
 
-
-// 25msごとのタイマー割り込み
 OperatingMode currentMode = TIME_WALK_MODE; // デフォルトは待機モード
 
 unsigned long timeWalkStartTime = 0;
 int timeWalkTargetIndex = 0;
 
-int targetPressure[3] = {0, 0, 0};
+int targetPressure[3] = {0, 0, 0};　//目標値の初期配列
 
 void setup() {
   // セットアップ
   // センサーの初期化、バルブの初期化、通信の初期化などを行う
   // タイマー割り込みを設定する
-  MsTimer2::set(25, flash);     // 25ms毎にflash( )割込み関数を呼び出す様に設定
+  MsTimer2::set(rooptime, flash);     // 25ms毎にflash( )割込み関数を呼び出す様に設定
   EXITleg[1] = 2; // EXITleg1にピン番号2を割り当てる（例）
   inleg[1] = 3;
   EXITleg[2] = 6; 
@@ -57,7 +57,7 @@ void setup() {
   // 他のピン番号の設定も同様に行う
   // ここはセットアップ。今回使うのはアナログピン1~3
   // 圧力計ごとにアナログピンを使う
-  Serial.begin(9600);
+  Serial.begin(38400);
   pinMode( EXITleg[1], OUTPUT );
   pinMode( inleg[1], OUTPUT );
   pinMode( EXITleg[2], OUTPUT );
@@ -75,7 +75,7 @@ void loop() {
     char command = Serial.read();
     switch (command) {
       case 'P':
-        currentMode = PC_COMMAND_MODE;
+        currentMode = PC_COMMAND_MODE; //基本的に秒数歩行でやりますよと
         break;
       case 'T':
         currentMode = TIME_WALK_MODE;
@@ -167,7 +167,7 @@ void next_channel() {
     case AD1: pin = AD2; break;
     case AD2: pin = AD3; break;
     case AD3: pin = AD4; break;
-    case AD4: pin = AD5; break;
+    case AD4: pin = AD0; break;
     //case AD5: pin = AD0; break;
     default: pin = AD0; break;
   }
