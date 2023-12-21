@@ -1,17 +1,17 @@
 #include <MsTimer2.h>            // タイマー割り込みを利用する為に必要なヘッダファイル
 #include <stdio.h>
-#define AD0 54 //センサのピンで指定する奴じゃない本当のアドレス？あとで書き直す
-#define AD1 55 //0から順にデータ配列に入る、足の番号1~3とデータ配列1～3に入るセンサーデータはそろえる
-#define AD2 56　//今はA0と本来のA0はそろっている。
-#define AD3 57
-#define AD4 58
-#define AD5 59
-#define AD6 60
+#define AD0 56 //センサのピンで指定する奴じゃない本当のアドレス？あとで書き直す
+#define AD1 57 //0から順にデータ配列に入る、足の番号1~3とデータ配列1～3に入るセンサーデータはそろえる
+#define AD2 58  //今はA0と本来のA0はそろっている。
+#define AD3 55
+//#define AD4 58
+//#define AD5 59
+//#define AD6 60
 #define AD7 61
 //54A0、なし、55A1制圧タンク、56A2足1-弁2と3、57A3足2弁5と6,58A4足3弁7と8、59A5負圧タンク向け
 int current = 0;
 int count = 0; //データログ用のカウンタ
-int sensorNum = 5; //使ってるセンサの数　配列に使う
+int sensorNum = 4; //使ってるセンサの数　配列に使う
 int pin = AD0; // 初期のADCチャンネル
 
 // グローバル変数の定義
@@ -23,11 +23,12 @@ int rooptime = 25 ; //制御タイミング
 int EXITleg[10] = {0}; // 弁のピン番号を格納する配列
 int inleg[10] = {0}; //上に同じ
 
-int nontauchpuls = 10; //不感帯の幅　たぶんアナログリードだから要計算
+int nontauchpuls = 5; //不感帯の幅　たぶんアナログリードだから要計算
 int airroomNun =3 ; //空気室の数
 
 int date[2][10] = {{0}};  // 全ての要素を0で初期化
  //データバッファ領域
+int Valvestatus = 0; //開閉状態を記録する
 int currentTime = 0;
 
 enum OperatingMode {
@@ -41,7 +42,7 @@ OperatingMode currentMode = TIME_WALK_MODE; // デフォルトは待機モード
 unsigned long timeWalkStartTime = 0;
 int timeWalkTargetIndex = 0;
 
-int targetPressure[3] = {0, 0, 0};　//目標値の初期配列
+int targetPressure[3] = {0, 0, 0};  //目標値の初期配列
 
 void setup() {
   // セットアップ
@@ -105,20 +106,20 @@ void loop() {
       }
       break;
     case TIME_WALK_MODE:
-      if (currentTime - timeWalkStartTime < 15000) {
+      if (currentTime*25  - timeWalkStartTime < 15000) {
         // 5秒ごとにtargetPressureを任意セットに切り替える
         if (currentTime*25 < 5000) {
-          targetPressure[0] = 60 ;
-          targetPressure[1] = 60 ;
-          targetPressure[2] = 60 ;
+          targetPressure[0] = 150 ;
+          targetPressure[1] = 150 ;
+          targetPressure[2] = 150;
         } else if (currentTime * 25 < 10000) {
-          targetPressure[0] = 90 ;
-          targetPressure[1] = 90 ;
-          targetPressure[2] = 90 ;
+          targetPressure[0] = 100 ;
+          targetPressure[1] = 150 ;
+          targetPressure[2] = 100 ;
         } else {
-          targetPressure[0] = 20 ;
-          targetPressure[1] = 50 ;
-          targetPressure[2] = 80 ;
+          targetPressure[0] = 130 ;
+          targetPressure[1] = 100 ;
+          targetPressure[2] = 130 ;
         }
       } else {
         currentTime = 0; // タイマーリセット
@@ -166,8 +167,8 @@ void next_channel() {
     case AD0: pin = AD1; break;
     case AD1: pin = AD2; break;
     case AD2: pin = AD3; break;
-    case AD3: pin = AD4; break;
-    case AD4: pin = AD0; break;
+    case AD3: pin = AD0; break;
+    //case AD4: pin = AD0; break;
     //case AD5: pin = AD0; break;
     default: pin = AD0; break;
   }
@@ -176,6 +177,10 @@ void next_channel() {
 void current_to_bafa() {
   date[0][count] = current;
   if(count == sensorNum-1) {
+    for(int k = 0;k < 3; k++){
+      date[0][k+4] = targetPressure[k];
+    }
+    date[0][7] = Valvestatus;
     count = 0;
   }
   else{
@@ -190,7 +195,6 @@ void datelog() {
       Serial.print(date[1][j]);
       Serial.print("\t");
       date[1][j] = date[0][j];
-        
     }
     Serial.println( );              // 改行の出力
 }
@@ -198,21 +202,24 @@ void datelog() {
 
 void controlAirPressure(int i) {
   // 空気圧制御アルゴリズムを実装
-  int currentPressure = date[0][i+1];
+  int currentPressure = date[0][i];
   int pressureDifference = targetPressure[i] - currentPressure;
 
   if (pressureDifference > nontauchpuls) {
     // 目標値よりも低い場合の制御
-    openSupplyValve(i); // 吸気バルブを開く
-    closeExhaustValve(i); // 排気バルブを閉じる
+    openSupplyValve(i+1); // 吸気バルブを開く
+    closeExhaustValve(i+1); // 排気バルブを閉じる
+    Valvestatus = 0;
   } else if (pressureDifference < -nontauchpuls) {
     // 目標値よりも高い場合の制御
-    closeSupplyValve(i); // 吸気バルブを閉じる
-    openExhaustValve(i); // 排気バルブを開く
+    closeSupplyValve(i+1); // 吸気バルブを閉じる
+    openExhaustValve(i+1); // 排気バルブを開く
+    Valvestatus = 1 ;
   } else {
     // 目標値に近い場合の制御
-    closeSupplyValve(i); // 吸気バルブを閉じる
-    closeExhaustValve(i); // 排気バルブを閉じる
+    closeSupplyValve(i+1); // 吸気バルブを閉じる
+    closeExhaustValve(i+1); // 排気バルブを閉じる
+    Valvestatus = 2;
   }
 }
 
